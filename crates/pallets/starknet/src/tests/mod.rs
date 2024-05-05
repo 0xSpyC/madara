@@ -356,6 +356,12 @@ pub fn set_infinite_tokens<T: Config>(contract_address: &ContractAddress) {
     state_adapter
         .set_storage_at(fee_token_addresses.eth_fee_token_address, balance_key_high, StarkFelt::from(u64::MAX as u128))
         .unwrap();
+    state_adapter
+        .set_storage_at(fee_token_addresses.strk_fee_token_address, balance_key_low, StarkFelt::from(u64::MAX as u128))
+        .unwrap();
+    state_adapter
+        .set_storage_at(fee_token_addresses.strk_fee_token_address, balance_key_high, StarkFelt::from(u64::MAX as u128))
+        .unwrap();
 }
 
 /// Sets nonce for the given address.
