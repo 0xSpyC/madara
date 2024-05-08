@@ -51,7 +51,7 @@ fn prepare_data_availability_modes(
 ) -> FieldElement {
     let mut buffer = [0u8; 32];
     buffer[8..12].copy_from_slice(&(nonce_data_availability_mode as u32).to_be_bytes());
-    buffer[12..].copy_from_slice(&(fee_data_availability_mode as u32).to_be_bytes());
+    buffer[12..16].copy_from_slice(&(fee_data_availability_mode as u32).to_be_bytes());
 
     // Safe to unwrap because we left most significant bit of the buffer empty
     FieldElement::from_bytes_be(&buffer).unwrap()

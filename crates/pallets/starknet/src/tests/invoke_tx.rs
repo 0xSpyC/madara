@@ -32,8 +32,8 @@ use crate::tests::constants::{UDC_ADDRESS, UDC_SELECTOR};
 use crate::tests::mock::get_storage_key;
 use crate::tests::{
     get_invoke_argent_dummy, get_invoke_braavos_dummy, get_invoke_dummy, get_invoke_emit_event_dummy,
-    get_invoke_nonce_dummy, get_invoke_openzeppelin_dummy, get_storage_read_write_dummy, set_infinite_tokens,
-    set_nonce,
+    get_invoke_nonce_dummy, get_invoke_openzeppelin_dummy, get_invoke_v3_dummy, get_storage_read_write_dummy,
+    set_infinite_tokens, set_nonce,
 };
 use crate::{Call, Error, StorageView};
 
@@ -91,7 +91,37 @@ fn given_hardcoded_contract_run_invoke_v1_with_zero_strk_and_eth_fee_token_tx_fa
 }
 
 #[test]
-fn given_hardcoded_contract_run_invoke_v1_with_zero_eth_fee_token_tx_fails() {
+fn given_hardcoded_contract_run_invoke_v3_with_zero_strk_and_eth_fee_token_tx_fails() {
+    new_test_ext::<MockRuntime>().execute_with(|| {
+        basic_test_setup(2);
+        let none_origin = RuntimeOrigin::none();
+
+        // Account that gonna make the transaction
+        let sender_address = get_account_address(None, AccountType::V0(AccountTypeV0Inner::NoValidate));
+
+        // Ethereum fee token contract address
+        let eth_fee_contract_address =
+            ContractAddress(PatriciaKey(StarkFelt::try_from(ETH_FEE_TOKEN_ADDRESS).unwrap()));
+
+        // starknet fee token contract address
+        let strk_fee_contract_address =
+            ContractAddress(PatriciaKey(StarkFelt::try_from(STRK_FEE_TOKEN_ADDRESS).unwrap()));
+
+        let mut transaction = get_invoke_v3_dummy(Starknet::chain_id(), NONCE_ZERO);
+
+        if let starknet_api::transaction::InvokeTransaction::V3(tx) = &mut transaction.tx {
+            tx.sender_address = sender_address;
+        };
+
+        set_sender_erc20_balance_to_zero(sender_address, eth_fee_contract_address);
+        set_sender_erc20_balance_to_zero(sender_address, strk_fee_contract_address);
+
+        assert_err!(Starknet::invoke(none_origin, transaction), Error::<MockRuntime>::TransactionExecutionFailed);
+    });
+}
+
+#[test]
+fn given_hardcoded_contract_run_invoke_v1_without_eth_fee_token_with_strk_fee_token_tx_fails() {
     new_test_ext::<MockRuntime>().execute_with(|| {
         basic_test_setup(2);
         let none_origin = RuntimeOrigin::none();
@@ -129,9 +159,10 @@ fn given_hardcoded_contract_run_invoke_v1_with_zero_eth_fee_token_tx_fails() {
 }
 
 #[test]
-fn given_hardcoded_contract_run_invoke_v3_with_zero_eth_fee_token_it_works() {
+fn given_hardcoded_contract_run_invoke_v3_without_eth_fee_token_with_strk_fee_token_tx_fails() {
     new_test_ext::<MockRuntime>().execute_with(|| {
         basic_test_setup(2);
+
         let none_origin = RuntimeOrigin::none();
 
         // Account that gonna make the transaction
@@ -145,7 +176,7 @@ fn given_hardcoded_contract_run_invoke_v3_with_zero_eth_fee_token_it_works() {
         let strk_fee_contract_address =
             ContractAddress(PatriciaKey(StarkFelt::try_from(STRK_FEE_TOKEN_ADDRESS).unwrap()));
 
-        let mut transaction = get_invoke_dummy(Starknet::chain_id(), NONCE_ZERO);
+        let mut transaction = get_invoke_v3_dummy(Starknet::chain_id(), NONCE_ZERO);
 
         if let starknet_api::transaction::InvokeTransaction::V3(tx) = &mut transaction.tx {
             tx.sender_address = sender_address;
@@ -165,15 +196,93 @@ fn given_hardcoded_contract_run_invoke_v3_with_zero_eth_fee_token_it_works() {
 
         assert_ok!(Starknet::invoke(none_origin, transaction));
         let final_balance_vec = get_balance_contract_call(sender_address, strk_fee_contract_address);
-        // assert!(final_balance_vec[1] < initial_balance_vec[1]);
-        // assert!(final_balance_vec[0] < initial_balance_vec[0]);
-        println!("fbhigh {} ibhigh {}", final_balance_vec[0].0, initial_balance_vec[0].0);
-        println!("fblow {} iblow {}", final_balance_vec[0].0, initial_balance_vec[0].0);
+        assert!(final_balance_vec[1] == initial_balance_vec[1]);
+        assert!(final_balance_vec[0] < initial_balance_vec[0]);
     });
 }
 
 #[test]
-fn given_hardcoded_contract_run_invoke_v1_with_zero_strk_fee_token_it_works() {
+fn given_hardcoded_contract_run_invoke_v3_with_eth_and_strk_fee_token_it_works() {
+    new_test_ext::<MockRuntime>().execute_with(|| {
+        basic_test_setup(2);
+
+        let none_origin = RuntimeOrigin::none();
+
+        // Account that gonna make the transaction
+        let sender_address = get_account_address(None, AccountType::V0(AccountTypeV0Inner::NoValidate));
+
+        // Ethereum fee token contract address
+        let eth_fee_contract_address =
+            ContractAddress(PatriciaKey(StarkFelt::try_from(ETH_FEE_TOKEN_ADDRESS).unwrap()));
+
+        // starknet fee token contract address
+        let strk_fee_contract_address =
+            ContractAddress(PatriciaKey(StarkFelt::try_from(STRK_FEE_TOKEN_ADDRESS).unwrap()));
+
+        let mut transaction = get_invoke_v3_dummy(Starknet::chain_id(), NONCE_ZERO);
+
+        if let starknet_api::transaction::InvokeTransaction::V3(tx) = &mut transaction.tx {
+            tx.sender_address = sender_address;
+        };
+
+        let initial_balance_vec = get_balance_contract_call(sender_address, strk_fee_contract_address);
+        // Ensure that strk fee token balance is not empty
+        pretty_assertions::assert_eq!(
+            initial_balance_vec,
+            vec![
+                Felt252Wrapper::from_hex_be("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF").unwrap(),
+                Felt252Wrapper::from_hex_be("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF").unwrap()
+            ]
+        );
+
+        assert_ok!(Starknet::invoke(none_origin, transaction));
+        let final_balance_vec = get_balance_contract_call(sender_address, strk_fee_contract_address);
+        assert!(final_balance_vec[1] == initial_balance_vec[1]);
+        assert!(final_balance_vec[0] < initial_balance_vec[0]);
+    });
+}
+
+#[test]
+fn given_hardcoded_contract_run_invoke_v3_without_strk_with_eth_fee_token_it_fails() {
+    new_test_ext::<MockRuntime>().execute_with(|| {
+        basic_test_setup(2);
+
+        let none_origin = RuntimeOrigin::none();
+
+        // Account that gonna make the transaction
+        let sender_address = get_account_address(None, AccountType::V0(AccountTypeV0Inner::NoValidate));
+
+        // Ethereum fee token contract address
+        let eth_fee_contract_address =
+            ContractAddress(PatriciaKey(StarkFelt::try_from(ETH_FEE_TOKEN_ADDRESS).unwrap()));
+
+        // starknet fee token contract address
+        let strk_fee_contract_address =
+            ContractAddress(PatriciaKey(StarkFelt::try_from(STRK_FEE_TOKEN_ADDRESS).unwrap()));
+
+        let mut transaction = get_invoke_v3_dummy(Starknet::chain_id(), NONCE_ZERO);
+
+        if let starknet_api::transaction::InvokeTransaction::V3(tx) = &mut transaction.tx {
+            tx.sender_address = sender_address;
+        };
+
+        set_sender_erc20_balance_to_zero(sender_address, strk_fee_contract_address);
+
+        // Ensure that eth fee token balance is not empty
+        pretty_assertions::assert_eq!(
+            get_balance_contract_call(sender_address, eth_fee_contract_address),
+            vec![
+                Felt252Wrapper::from_hex_be("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF").unwrap(),
+                Felt252Wrapper::from_hex_be("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF").unwrap()
+            ]
+        );
+
+        assert_err!(Starknet::invoke(none_origin, transaction), Error::<MockRuntime>::TransactionExecutionFailed);
+    });
+}
+
+#[test]
+fn given_hardcoded_contract_run_invoke_v1_without_strk_fee_token_it_works() {
     new_test_ext::<MockRuntime>().execute_with(|| {
         basic_test_setup(2);
         let none_origin = RuntimeOrigin::none();
@@ -197,105 +306,22 @@ fn given_hardcoded_contract_run_invoke_v1_with_zero_strk_fee_token_it_works() {
 
         set_sender_erc20_balance_to_zero(sender_address, strk_fee_contract_address);
 
-        // Ensure that strk fee token balance is not empty
+        let initial_balance_vec = get_balance_contract_call(sender_address, eth_fee_contract_address);
+        // Ensure that eth fee token balance is not empty
         pretty_assertions::assert_eq!(
-            get_balance_contract_call(sender_address, eth_fee_contract_address),
+            initial_balance_vec,
             vec![
                 Felt252Wrapper::from_hex_be("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF").unwrap(),
-                Felt252Wrapper::from_hex_be("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF").unwrap(),
+                Felt252Wrapper::from_hex_be("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF").unwrap()
             ]
         );
 
         assert_ok!(Starknet::invoke(none_origin, transaction));
+        let final_balance_vec = get_balance_contract_call(sender_address, eth_fee_contract_address);
+        assert!(final_balance_vec[1] == initial_balance_vec[1]);
+        assert!(final_balance_vec[0] < initial_balance_vec[0]);
     });
 }
-
-// #[test]
-// fn given_hardcoded_contract_run_invoke_without_eth_token_it_works() {
-//     new_test_ext::<MockRuntime>().execute_with(|| {
-//         basic_test_setup(2);
-//         let none_origin = RuntimeOrigin::none();
-
-//         // Account that gonna make the transaction
-//         let sender_address = get_account_address(None,
-// AccountType::V0(AccountTypeV0Inner::NoValidate));
-
-//         pretty_assertions::assert_eq!(
-//             sender_address.0.0,
-//
-// StarkFelt::try_from("0x01a3339ec92ac1061e3e0f8e704106286c642eaf302e94a582e5f95ef5e6b4d0")
-//                 .unwrap()
-//                 .try_into()
-//                 .unwrap()
-//         );
-
-//         // ethereum fee token contract address
-//         let eth_fee_contract_address =
-//             ContractAddress(PatriciaKey(StarkFelt::try_from(ETH_FEE_TOKEN_ADDRESS).unwrap()));
-//         let strk_fee_contract_address =
-//             ContractAddress(PatriciaKey(StarkFelt::try_from(STRK_FEE_TOKEN_ADDRESS).unwrap()));
-
-//         let mut transaction = get_invoke_dummy(Starknet::chain_id(), NONCE_ZERO);
-
-//         if let starknet_api::transaction::InvokeTransaction::V1(tx) = &mut transaction.tx {
-//             tx.sender_address = sender_address;
-//         };
-
-//         // Emptying the balance of ETH fee tokens from Account V0
-//         let eth_balance_low_storage = get_storage_key(
-//             &eth_fee_contract_address,
-//             "ERC20_balances",
-//             &[FieldElement::from_bytes_be(&(&sender_address.0.0).0).unwrap()],
-//             0,
-//         );
-//         let eth_balance_high_storage = get_storage_key(
-//             &eth_fee_contract_address,
-//             "ERC20_balances",
-//             &[FieldElement::from_bytes_be(&(&sender_address.0.0).0).unwrap()],
-//             1,
-//         );
-
-//         pretty_assertions::assert_eq!(
-//             eth_balance_low_storage.1,
-//
-// StarkFelt::try_from("0x3701645da930cd7f63318f7f118a9134e72d64ab73c72ece81cae2bd5fb403f")
-//                 .unwrap()
-//                 .try_into()
-//                 .unwrap()
-//         );
-
-//         pretty_assertions::assert_eq!(
-//             eth_balance_high_storage.1,
-//
-// StarkFelt::try_from("0x3701645da930cd7f63318f7f118a9134e72d64ab73c72ece81cae2bd5fb4040")
-//                 .unwrap()
-//                 .try_into()
-//                 .unwrap()
-//         );
-
-//         StorageView::<MockRuntime>::insert(eth_balance_low_storage,
-// StarkFelt::try_from("0").unwrap());
-//         StorageView::<MockRuntime>::insert(eth_balance_high_storage,
-// StarkFelt::try_from("0").unwrap());
-
-//         let call_args = build_get_balance_contract_call(sender_address.0.0);
-//         pretty_assertions::assert_eq!(
-//             Starknet::call_contract(eth_fee_contract_address, call_args.0, call_args.1).unwrap(),
-//             vec![Felt252Wrapper::from_hex_be("0x0").unwrap(),
-// Felt252Wrapper::from_hex_be("0x0").unwrap()]         );
-
-//         // let call_args = build_get_balance_contract_call(sender_address.0.0);
-//         // pretty_assertions::assert_eq!(
-//         //     Starknet::call_contract(strk_fee_contract_address, call_args.0,
-// call_args.1).unwrap(),         //     vec![
-//         //         Felt252Wrapper::from_hex_be("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF").unwrap(),
-//         //         Felt252Wrapper::from_hex_be("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF").unwrap()
-//         //     ]
-//         // );
-
-//         assert_ok!(Starknet::invoke(none_origin, transaction));
-//     });
-// }
 
 #[test]
 fn given_hardcoded_contract_run_invoke_tx_then_it_works() {

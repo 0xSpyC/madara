@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -111,4 +112,17 @@ pub fn build_get_balance_contract_call(account_address: StarkFelt) -> (EntryPoin
     ]));
 
     (balance_of_selector, calldata)
+}
+
+pub fn create_resource_bounds() -> starknet_api::transaction::ResourceBoundsMapping {
+    let mut map = BTreeMap::new();
+    map.insert(
+        starknet_api::transaction::Resource::L1Gas,
+        starknet_api::transaction::ResourceBounds { max_amount: 10000, max_price_per_unit: 12000 },
+    );
+    map.insert(
+        starknet_api::transaction::Resource::L1Gas,
+        starknet_api::transaction::ResourceBounds { max_amount: 50000, max_price_per_unit: 31000 },
+    );
+    starknet_api::transaction::ResourceBoundsMapping(map)
 }
